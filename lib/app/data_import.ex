@@ -1,4 +1,6 @@
 defmodule App.DataImport do
+  alias App.DataImport.Unl
+  alias App.DataImport.UnlDecoder
   alias App.Logger
   alias App.Parliament
   alias App.FileStorage.FsFileStorage
@@ -6,63 +8,12 @@ defmodule App.DataImport do
   @voting_url "https://www.psp.cz/eknih/cdrom/opendata/hl-2021ps.zip"
   @general_url "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
 
+  @spec import_data() :: :ok | {:error, reason :: any()}
   def import_data() do
-    general_zip_path = "data_import/general.zip"
-    general_unziped_path = "data_import/general"
-    voting_zip_path = "data_import/voting-2021.zip"
-    voting_unziped_path = "data_import/voting-2021"
-
-    :ok = rm_existing_file(general_zip_path)
-    :ok = rm_existing_file(general_unziped_path)
-    :ok = rm_existing_file(voting_zip_path)
-    :ok = rm_existing_file(voting_unziped_path)
-
-    res =
-      with {:download_general, {:ok, _res}} <-
-             download_data(@general_url, general_zip_path)
-             |> name_stage(:download_general),
-           {:download_voting, {:ok, _res}} <-
-             download_data(@voting_url, voting_zip_path)
-             |> name_stage(:download_voting),
-           {:unzip_general, {:ok, _file_names}} <-
-             unzip(general_zip_path, general_unziped_path)
-             |> name_stage(:unzip_general),
-           {:unzip_voting, {:ok, _file_names}} <-
-             unzip(voting_zip_path, voting_unziped_path)
-             |> name_stage(:unzip_voting),
-           {:import_person, :ok} <-
-             read_and_decode_unl(
-               Path.join(general_unziped_path, "osoby.unl"),
-               &process_person/1,
-               &Parliament.count_person/0
-             )
-             |> name_stage(:import_person),
-           {:import_deputy, :ok} <-
-             read_and_decode_unl(
-               Path.join(general_unziped_path, "poslanec.unl"),
-               &process_deputy/1,
-               &Parliament.count_deputy/0
-             )
-             |> name_stage(:import_deputy),
-           {:import_body, :ok} <-
-             read_and_decode_unl(
-               Path.join(general_unziped_path, "organy.unl"),
-               &process_body/1,
-               &Parliament.count_body/0
-             )
-             |> name_stage(:import_body) do
-        :ok
-      else
-        {stage, err} ->
-          Logger.error("Stage failed", stage: stage, err: err)
-          err
-      end
-
-    :ok = rm_existing_file(general_zip_path)
-    :ok = rm_existing_file(general_unziped_path)
-    :ok = rm_existing_file(voting_zip_path)
-    :ok = rm_existing_file(voting_unziped_path)
-    res
+    with :ok <- import_general(@general_url),
+         :ok <- import_election_period(@voting_url, "2021") do
+      :ok
+    end
   end
 
   defp process_person([
@@ -82,10 +33,10 @@ defmodule App.DataImport do
         _ -> :female
       end
 
-    with {:ok, id} <- decode_integer(id),
-         {:ok, birth_date} <- decode_nullable(birth_date, &decode_date/1),
-         {:ok, updated_at} <- decode_nullable(updated_at, &decode_date/1),
-         {:ok, died_at} <- decode_nullable(death_at, &decode_date/1) do
+    with {:ok, id} <- UnlDecoder.decode_integer(id),
+         {:ok, birth_date} <- UnlDecoder.decode_nullable(birth_date, &UnlDecoder.decode_date/1),
+         {:ok, updated_at} <- UnlDecoder.decode_nullable(updated_at, &UnlDecoder.decode_date/1),
+         {:ok, died_at} <- UnlDecoder.decode_nullable(death_at, &UnlDecoder.decode_date/1) do
       upsert_result =
         Parliament.upsert_person(%{
           id: id,
@@ -128,8 +79,8 @@ defmodule App.DataImport do
          _facebook,
          _photo
        ]) do
-    with {:ok, id} <- decode_integer(id),
-         {:ok, person_id} <- decode_integer(person_id) do
+    with {:ok, id} <- UnlDecoder.decode_integer(id),
+         {:ok, person_id} <- UnlDecoder.decode_integer(person_id) do
       upsert_result = Parliament.upsert_deputy(%{id: id, person_id: person_id})
 
       case upsert_result do
@@ -156,9 +107,9 @@ defmodule App.DataImport do
          _priority,
          _base
        ]) do
-    with {:ok, id} <- decode_integer(id),
-         {:ok, from} <- decode_date(from),
-         {:ok, to} <- decode_nullable(to, &decode_date/1) do
+    with {:ok, id} <- UnlDecoder.decode_integer(id),
+         {:ok, from} <- UnlDecoder.decode_date(from),
+         {:ok, to} <- UnlDecoder.decode_nullable(to, &UnlDecoder.decode_date/1) do
       upsert_result =
         Parliament.upsert_body(%{
           id: id,
@@ -180,121 +131,84 @@ defmodule App.DataImport do
     end
   end
 
-  defp decode_nullable(value, next_decoder) do
-    case value do
-      nil -> {:ok, value}
-      value -> next_decoder.(value)
+  defp process_voting([]) do
+  end
+
+  defp import_general(zip_url) do
+    zip_path = "data_import/general.zip"
+    unzip_path = "data_import/general"
+
+    with :ok <- rm_existing_file(zip_path),
+         :ok <- rm_existing_file(unzip_path),
+         {:ok, _res} <- download_data(zip_url, zip_path),
+         :ok <- unzip(zip_path, unzip_path),
+         :ok <-
+           process_unl_with_count_check(
+             Path.join(unzip_path, "osoby.unl"),
+             &process_person/1,
+             &Parliament.count_person/0
+           ),
+         :ok <-
+           process_unl_with_count_check(
+             Path.join(unzip_path, "poslanec.unl"),
+             &process_deputy/1,
+             &Parliament.count_deputy/0
+           ),
+         :ok <-
+           process_unl_with_count_check(
+             Path.join(unzip_path, "organy.unl"),
+             &process_body/1,
+             &Parliament.count_body/0
+           ),
+         :ok <- rm_existing_file(zip_path),
+         :ok <- rm_existing_file(unzip_path) do
+      :ok
     end
   end
 
-  defp decode_date(raw) do
-    # It guys probably got bored with only one date format so they added a second one
-    # So much fun :)
-    [day, month, year] =
-      cond do
-        String.contains?(raw, ".") ->
-          String.split(raw, ".")
+  defp import_election_period(zip_url, start_year) do
+    unzip_path = "data_import/voting" <> start_year
+    zip_path = unzip_path <> ".zip"
 
-        String.contains?(raw, "-") ->
-          [year, month, day] = String.split(raw, "-")
-          [day, month, year]
+    with :ok <- rm_existing_file(zip_path),
+         :ok <- rm_existing_file(unzip_path),
+         {:ok, _res} <- download_data(zip_url, zip_path),
+         :ok <- unzip(zip_path, unzip_path),
+         :ok <-
+           process_unl_with_count_check(
+             # TODO:
+             Path.join(unzip_path, "hl_xxx"),
+             &process_voting/1,
+             fn -> 0 end
+           ),
+         :ok <- rm_existing_file(zip_path),
+         :ok <- rm_existing_file(unzip_path) do
+      :ok
+    end
+  end
+
+  defp process_unl_with_count_check(path, processor, count_db_rows) do
+    full_path = FsFileStorage.path(path)
+
+    with {:ok, processed_rows} <- Unl.process_unl(full_path, processor) do
+      db_rows = count_db_rows.()
+
+      case processed_rows == db_rows do
+        true ->
+          :ok
+
+        false ->
+          Logger.error(
+            "Number of processed rows do not equal number of rows in DB",
+            processed_rows: processed_rows,
+            db_rows: db_rows,
+            file: full_path
+          )
+
+          {:error, :number_of_rows_do_not_match}
       end
-
-    with {day, _remainder} <- Integer.parse(day),
-         {month, _remainder} <- Integer.parse(month),
-         {year, _remainder} <- Integer.parse(year),
-         {:ok, date} <- Date.new(year, month, day) do
-      {:ok, date}
-    else
-      error ->
-        Logger.error("Failed to decode date", date: raw, error: error)
-        {:error, :invalid_date}
     end
   end
-
-  defp decode_integer(raw) do
-    case Integer.parse(raw) do
-      {int, _remainder} -> {:ok, int}
-      :error -> {:error, :invalid_integer}
-    end
-  end
-
-  @spec read_and_decode_unl(
-          String.t(),
-          (list(String.t() | nil) -> :ok | {:error, reason :: any()}),
-          (-> integer())
-        ) :: :ok | {:error, reason :: any()}
-  defp read_and_decode_unl(path, process_row, count_db_rows) do
-    process_line = fn line ->
-      decoded_line = :iconv.convert("windows-1250", "utf-8", line)
-
-      decoded_line
-      |> remove_trailing_delimiter_and_newline
-      |> String.split("|")
-      |> Enum.map(fn value ->
-        case value do
-          "" -> nil
-          other -> other
-        end
-      end)
-      |> process_row.()
-    end
-
-    process_result =
-      path
-      |> FsFileStorage.path()
-      |> File.stream!()
-      |> Enum.reduce_while(%{row_count: 0, prev_line: nil}, fn line, acc ->
-        cond do
-          acc.prev_line == nil ->
-            {:cont, %{row_count: acc.row_count, prev_line: line}}
-
-          String.starts_with?(line, "|") ->
-            {:cont,
-             %{
-               row_count: acc.row_count,
-               prev_line: remove_trailing_delimiter_and_newline(acc.prev_line) <> line
-             }}
-
-          true ->
-            case process_line.(acc.prev_line) do
-              {:error, reason} -> {:hatl, {:error, reason}}
-              :ok -> {:cont, %{row_count: acc.row_count + 1, prev_line: line}}
-            end
-        end
-      end)
-
-    # TODO: error handling
-    process_line.(process_result.prev_line)
-
-    case process_result do
-      {:error, reason} ->
-        {:error, reason}
-
-      %{row_count: processed_rows} ->
-        db_row_count = count_db_rows.()
-
-        # Because of the last process_line call
-        processed_rows = processed_rows + 1
-
-        case processed_rows == db_row_count do
-          true ->
-            :ok
-
-          false ->
-            Logger.error(
-              "Number of rows do not equal number of rows in DB",
-              processed_rows: processed_rows,
-              db_rows: db_row_count,
-              path: path
-            )
-
-            {:error, :number_of_rows_do_not_match}
-        end
-    end
-  end
-
-  defp remove_trailing_delimiter_and_newline(line), do: String.replace(line, ~r/\|\n$/, "")
 
   defp download_data(url, into) do
     Req.get(url, into: FsFileStorage.stream!(into))
@@ -308,15 +222,30 @@ defmodule App.DataImport do
 
     Logger.info("Unzipping from", from: from, to: to)
 
-    :zip.unzip(from, [{:cwd, to}])
+    case :zip.unzip(from, [{:cwd, to}]) do
+      {:ok, _file_list} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error("Failed to unzip archive", from: from, to: to, reason: reason)
+        {:error, reason}
+    end
   end
 
   defp rm_existing_file(path) do
     case FsFileStorage.exists?(path) do
-      true -> FsFileStorage.rm(path)
-      false -> :ok
+      true ->
+        case FsFileStorage.rm(path) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.error("Failed to remove existing file", path: path, reason: reason)
+            {:error, reason}
+        end
+
+      false ->
+        :ok
     end
   end
-
-  defp name_stage(result, name), do: {name, result}
 end

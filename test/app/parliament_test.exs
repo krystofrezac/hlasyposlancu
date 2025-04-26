@@ -8,7 +8,16 @@ defmodule App.ParliamentTest do
 
     import App.ParliamentFixtures
 
-    @invalid_attrs %{before_title: nil, first_name: nil, last_name: nil, after_title: nil, birth_date: nil, sex: nil, updated_at: nil, died_at: nil}
+    @invalid_attrs %{
+      before_title: nil,
+      first_name: nil,
+      last_name: nil,
+      after_title: nil,
+      birth_date: nil,
+      sex: nil,
+      updated_at: nil,
+      died_at: nil
+    }
 
     test "list_person/0 returns all person" do
       person = person_fixture()
@@ -21,7 +30,16 @@ defmodule App.ParliamentTest do
     end
 
     test "create_person/1 with valid data creates a person" do
-      valid_attrs = %{before_title: "some before_title", first_name: "some first_name", last_name: "some last_name", after_title: "some after_title", birth_date: ~U[2025-04-25 07:22:00Z], sex: :male, updated_at: ~U[2025-04-25 07:22:00Z], died_at: ~U[2025-04-25 07:22:00Z]}
+      valid_attrs = %{
+        before_title: "some before_title",
+        first_name: "some first_name",
+        last_name: "some last_name",
+        after_title: "some after_title",
+        birth_date: ~U[2025-04-25 07:22:00Z],
+        sex: :male,
+        updated_at: ~U[2025-04-25 07:22:00Z],
+        died_at: ~U[2025-04-25 07:22:00Z]
+      }
 
       assert {:ok, %Person{} = person} = Parliament.create_person(valid_attrs)
       assert person.before_title == "some before_title"
@@ -40,7 +58,17 @@ defmodule App.ParliamentTest do
 
     test "update_person/2 with valid data updates the person" do
       person = person_fixture()
-      update_attrs = %{before_title: "some updated before_title", first_name: "some updated first_name", last_name: "some updated last_name", after_title: "some updated after_title", birth_date: ~U[2025-04-26 07:22:00Z], sex: :female, updated_at: ~U[2025-04-26 07:22:00Z], died_at: ~U[2025-04-26 07:22:00Z]}
+
+      update_attrs = %{
+        before_title: "some updated before_title",
+        first_name: "some updated first_name",
+        last_name: "some updated last_name",
+        after_title: "some updated after_title",
+        birth_date: ~U[2025-04-26 07:22:00Z],
+        sex: :female,
+        updated_at: ~U[2025-04-26 07:22:00Z],
+        died_at: ~U[2025-04-26 07:22:00Z]
+      }
 
       assert {:ok, %Person{} = person} = Parliament.update_person(person, update_attrs)
       assert person.before_title == "some updated before_title"
@@ -143,7 +171,12 @@ defmodule App.ParliamentTest do
     end
 
     test "create_body/1 with valid data creates a body" do
-      valid_attrs = %{name: "some name", to: ~D[2025-04-25], from: ~D[2025-04-25], abbreviation: "some abbreviation"}
+      valid_attrs = %{
+        name: "some name",
+        to: ~D[2025-04-25],
+        from: ~D[2025-04-25],
+        abbreviation: "some abbreviation"
+      }
 
       assert {:ok, %Body{} = body} = Parliament.create_body(valid_attrs)
       assert body.name == "some name"
@@ -158,7 +191,13 @@ defmodule App.ParliamentTest do
 
     test "update_body/2 with valid data updates the body" do
       body = body_fixture()
-      update_attrs = %{name: "some updated name", to: ~D[2025-04-26], from: ~D[2025-04-26], abbreviation: "some updated abbreviation"}
+
+      update_attrs = %{
+        name: "some updated name",
+        to: ~D[2025-04-26],
+        from: ~D[2025-04-26],
+        abbreviation: "some updated abbreviation"
+      }
 
       assert {:ok, %Body{} = body} = Parliament.update_body(body, update_attrs)
       assert body.name == "some updated name"
