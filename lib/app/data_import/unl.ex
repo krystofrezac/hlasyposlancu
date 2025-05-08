@@ -1,6 +1,58 @@
 defmodule App.DataImport.Unl do
   alias App.Logger
 
+  def download(url, zip_path, unzip_path) do
+    with :ok <- rm_existing_file(zip_path),
+         :ok <- rm_existing_file(unzip_path),
+         {:ok, _res} <- Req.get(url, into: File.stream!(zip_path)),
+         :ok <- unzip(zip_path, unzip_path) do
+      :ok
+    end
+  end
+
+  def remove(zip_path, unzip_path) do
+    with :ok <- rm_existing_file(zip_path),
+         :ok <- rm_existing_file(unzip_path) do
+      :ok
+    end
+  end
+
+  defp unzip(from, to) do
+    :ok = File.mkdir(to)
+
+    from = from |> String.to_charlist()
+    to = to |> String.to_charlist()
+
+    Logger.info("Unzipping from", from: from, to: to)
+
+    case :zip.unzip(from, [{:cwd, to}]) do
+      {:ok, _file_list} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error("Failed to unzip archive", from: from, to: to, reason: reason)
+        {:error, reason}
+    end
+  end
+
+  defp rm_existing_file(path) do
+    case File.exists?(path) do
+      true ->
+        case File.rm_rf(path) do
+          {:ok, _removed_files} ->
+            :ok
+
+          {:error, reason, _file} ->
+            IO.inspect({"Failed to remove existing file", path: path, reason: reason})
+            Logger.error("Failed to remove existing file", path: path, reason: reason)
+            {:error, reason}
+        end
+
+      false ->
+        :ok
+    end
+  end
+
   @spec process_unl(
           String.t(),
           (list(String.t() | nil) -> :ok | {:error, reason :: any()})
@@ -11,6 +63,37 @@ defmodule App.DataImport.Unl do
     path
     |> File.stream!()
     |> process_stream(processor)
+  end
+
+  @spec process_with_count_check(
+          String.t(),
+          (list(String.t() | nil) -> :ok | {:error, reason :: any()}),
+          (-> integer())
+        ) :: {:ok, processed_rows: integer()} | {:error, reason :: any()}
+  def process_with_count_check(path, processor, count_db_rows) do
+    with {:ok, processed_rows} <- process_unl(path, processor) do
+      db_rows = count_db_rows.()
+
+      case processed_rows == db_rows do
+        true ->
+          :ok
+
+        false ->
+          IO.inspect(
+            {"Number of processed rows do not equal number of rows in DB",
+             processed_rows: processed_rows, db_rows: db_rows, file: path}
+          )
+
+          Logger.error(
+            "Number of processed rows do not equal number of rows in DB",
+            processed_rows: processed_rows,
+            db_rows: db_rows,
+            file: path
+          )
+
+          {:error, :number_of_rows_do_not_match}
+      end
+    end
   end
 
   defp process_stream(stream, processor) do

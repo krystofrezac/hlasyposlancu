@@ -55,4 +55,28 @@ defmodule App.ParliamentFixtures do
 
     body
   end
+
+  @doc """
+  Generate a voting.
+  """
+  def voting_fixture(attrs \\ %{}) do
+    {:ok, voting} =
+      attrs
+      |> Enum.into(%{
+        abstained: 42,
+        body_id: 42,
+        date_time: ~N[2025-05-07 16:05:00],
+        did_not_vote: 42,
+        logged_in: 42,
+        point: 42,
+        quorum: 42,
+        result: :approved,
+        voted_agains: 42,
+        voted_for: 42,
+        voting_type: :normal
+      })
+      |> App.Parliament.create_voting()
+
+    voting
+  end
 end

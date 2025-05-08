@@ -7,8 +7,6 @@ defmodule App.Parliament.Body do
     field :to, :date
     field :from, :date
     field :abbreviation, :string
-
-    timestamps(type: :utc_datetime)
   end
 
   @doc false

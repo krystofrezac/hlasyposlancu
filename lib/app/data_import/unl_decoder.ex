@@ -33,6 +33,24 @@ defmodule App.DataImport.UnlDecoder do
     end
   end
 
+  def decode_time(raw) do
+    with [hours, minutes] <- String.split(raw, ":"),
+         {hours, _remainder} <- Integer.parse(hours),
+         {minutes, _remainder} <- Integer.parse(minutes),
+         {:ok, time} <- Time.new(hours, minutes, 0) do
+      {:ok, time}
+    else
+      _ -> Logger.error("Failed to decode time", time: raw)
+    end
+  end
+
+  def decode_naive_date_time(raw_date, raw_time) do
+    with {:ok, date} <- decode_date(raw_date),
+         {:ok, time} <- decode_time(raw_time) do
+      NaiveDateTime.new(date, time)
+    end
+  end
+
   def decode_integer(raw) do
     case Integer.parse(raw) do
       {int, _remainder} -> {:ok, int}

@@ -7,8 +7,6 @@ defmodule App.Repo.Migrations.CreateBody do
       add :name, :text, null: false
       add :from, :date, null: false
       add :to, :date
-
-      timestamps(type: :utc_datetime)
     end
   end
 end

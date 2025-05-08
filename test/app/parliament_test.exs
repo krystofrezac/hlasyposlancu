@@ -223,4 +223,115 @@ defmodule App.ParliamentTest do
       assert %Ecto.Changeset{} = Parliament.change_body(body)
     end
   end
+
+  describe "voting" do
+    alias App.Parliament.Voting
+
+    import App.ParliamentFixtures
+
+    @invalid_attrs %{
+      result: nil,
+      body_id: nil,
+      point: nil,
+      date_time: nil,
+      voted_for: nil,
+      voted_agains: nil,
+      abstained: nil,
+      did_not_vote: nil,
+      logged_in: nil,
+      quorum: nil,
+      voting_type: nil
+    }
+
+    test "list_voting/0 returns all voting" do
+      voting = voting_fixture()
+      assert Parliament.list_voting() == [voting]
+    end
+
+    test "get_voting!/1 returns the voting with given id" do
+      voting = voting_fixture()
+      assert Parliament.get_voting!(voting.id) == voting
+    end
+
+    test "create_voting/1 with valid data creates a voting" do
+      valid_attrs = %{
+        result: :approved,
+        body_id: 42,
+        point: 42,
+        date_time: ~N[2025-05-07 16:05:00],
+        voted_for: 42,
+        voted_agains: 42,
+        abstained: 42,
+        did_not_vote: 42,
+        logged_in: 42,
+        quorum: 42,
+        voting_type: :normal
+      }
+
+      assert {:ok, %Voting{} = voting} = Parliament.create_voting(valid_attrs)
+      assert voting.result == :approved
+      assert voting.body_id == 42
+      assert voting.point == 42
+      assert voting.date_time == ~N[2025-05-07 16:05:00]
+      assert voting.voted_for == 42
+      assert voting.voted_agains == 42
+      assert voting.abstained == 42
+      assert voting.did_not_vote == 42
+      assert voting.logged_in == 42
+      assert voting.quorum == 42
+      assert voting.voting_type == :normal
+    end
+
+    test "create_voting/1 with invalid data returns error changeset" do
+      assert {:error, %Ecto.Changeset{}} = Parliament.create_voting(@invalid_attrs)
+    end
+
+    test "update_voting/2 with valid data updates the voting" do
+      voting = voting_fixture()
+
+      update_attrs = %{
+        result: :rejected,
+        body_id: 43,
+        point: 43,
+        date_time: ~N[2025-05-08 16:05:00],
+        voted_for: 43,
+        voted_agains: 43,
+        abstained: 43,
+        did_not_vote: 43,
+        logged_in: 43,
+        quorum: 43,
+        voting_type: :manual
+      }
+
+      assert {:ok, %Voting{} = voting} = Parliament.update_voting(voting, update_attrs)
+      assert voting.result == :rejected
+      assert voting.body_id == 43
+      assert voting.point == 43
+      assert voting.date_time == ~N[2025-05-08 16:05:00]
+      assert voting.voted_for == 43
+      assert voting.voted_agains == 43
+      assert voting.abstained == 43
+      assert voting.did_not_vote == 43
+      assert voting.logged_in == 43
+      assert voting.quorum == 43
+      assert voting.voting_type == :manual
+    end
+
+    test "update_voting/2 with invalid data returns error changeset" do
+      voting = voting_fixture()
+      assert {:error, %Ecto.Changeset{}} = Parliament.update_voting(voting, @invalid_attrs)
+      assert voting == Parliament.get_voting!(voting.id)
+    end
+
+    test "delete_voting/1 deletes the voting" do
+      voting = voting_fixture()
+      assert {:ok, %Voting{}} = Parliament.delete_voting(voting)
+      assert_raise Ecto.NoResultsError, fn -> Parliament.get_voting!(voting.id) end
+    end
+
+    test "change_voting/1 returns a voting changeset" do
+      voting = voting_fixture()
+      assert %Ecto.Changeset{} = Parliament.change_voting(voting)
+    end
+  end
 end

@@ -3,7 +3,7 @@ defmodule App.DataImport do
   alias App.DataImport.UnlDecoder
   alias App.Logger
   alias App.Parliament
-  alias App.FileStorage.FsFileStorage
+  alias App.FileStorage
 
   @voting_url "https://www.psp.cz/eknih/cdrom/opendata/hl-2021ps.zip"
   @general_url "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
@@ -131,121 +131,151 @@ defmodule App.DataImport do
     end
   end
 
-  defp process_voting([]) do
-  end
+  defp process_voting([
+         id,
+         body_id,
+         _meeting_number,
+         _number,
+         point,
+         date,
+         time,
+         voted_for,
+         voted_against,
+         abstained,
+         did_not_vote,
+         logged_in,
+         quorum,
+         voting_type,
+         result,
+         title_long,
+         title_short
+       ]) do
+    voting_type =
+      case voting_type do
+        "N" ->
+          {:ok, :normal}
 
-  defp import_general(zip_url) do
-    zip_path = "data_import/general.zip"
-    unzip_path = "data_import/general"
+        "R" ->
+          {:ok, :manual}
 
-    with :ok <- rm_existing_file(zip_path),
-         :ok <- rm_existing_file(unzip_path),
-         {:ok, _res} <- download_data(zip_url, zip_path),
-         :ok <- unzip(zip_path, unzip_path),
-         :ok <-
-           process_unl_with_count_check(
-             Path.join(unzip_path, "osoby.unl"),
-             &process_person/1,
-             &Parliament.count_person/0
-           ),
-         :ok <-
-           process_unl_with_count_check(
-             Path.join(unzip_path, "poslanec.unl"),
-             &process_deputy/1,
-             &Parliament.count_deputy/0
-           ),
-         :ok <-
-           process_unl_with_count_check(
-             Path.join(unzip_path, "organy.unl"),
-             &process_body/1,
-             &Parliament.count_body/0
-           ),
-         :ok <- rm_existing_file(zip_path),
-         :ok <- rm_existing_file(unzip_path) do
-      :ok
-    end
-  end
+        "E" ->
+          {:ok, :error}
 
-  defp import_election_period(zip_url, start_year) do
-    unzip_path = "data_import/voting" <> start_year
-    zip_path = unzip_path <> ".zip"
+        _ ->
+          Logger.error("Got unknown voting_type", voting_type: voting_type)
+          :error
+      end
 
-    with :ok <- rm_existing_file(zip_path),
-         :ok <- rm_existing_file(unzip_path),
-         {:ok, _res} <- download_data(zip_url, zip_path),
-         :ok <- unzip(zip_path, unzip_path),
-         :ok <-
-           process_unl_with_count_check(
-             # TODO:
-             Path.join(unzip_path, "hl_xxx"),
-             &process_voting/1,
-             fn -> 0 end
-           ),
-         :ok <- rm_existing_file(zip_path),
-         :ok <- rm_existing_file(unzip_path) do
-      :ok
-    end
-  end
+    result =
+      case result do
+        "A" ->
+          {:ok, :approved}
 
-  defp process_unl_with_count_check(path, processor, count_db_rows) do
-    full_path = FsFileStorage.path(path)
+        "R" ->
+          {:ok, :rejected}
 
-    with {:ok, processed_rows} <- Unl.process_unl(full_path, processor) do
-      db_rows = count_db_rows.()
+        "X" ->
+          {:ok, :unknown}
 
-      case processed_rows == db_rows do
-        true ->
+        "Q" ->
+          {:ok, :not_public}
+
+        "K" ->
+          {:ok, :quorum_not_reached}
+
+        _ ->
+          Logger.error("Got unknown result", result: result)
+          :error
+      end
+
+    with {:ok, id} <- UnlDecoder.decode_integer(id),
+         {:ok, body_id} <- UnlDecoder.decode_integer(body_id),
+         {:ok, point} <- UnlDecoder.decode_integer(point),
+         {:ok, date_time} <- UnlDecoder.decode_naive_date_time(date, time),
+         {:ok, voted_for} <- UnlDecoder.decode_integer(voted_for),
+         {:ok, voted_against} <- UnlDecoder.decode_integer(voted_against),
+         {:ok, abstained} <- UnlDecoder.decode_integer(abstained),
+         {:ok, did_not_vote} <- UnlDecoder.decode_integer(did_not_vote),
+         {:ok, logged_in} <- UnlDecoder.decode_integer(logged_in),
+         {:ok, quorum} <- UnlDecoder.decode_integer(quorum),
+         {:ok, voting_type} <- voting_type,
+         {:ok, result} <- result do
+      upsert_result =
+        Parliament.upsert_voting(%{
+          id: id,
+          body_id: body_id,
+          point: point,
+          date_time: date_time,
+          voted_for: voted_for,
+          voted_against: voted_against,
+          abstained: abstained,
+          did_not_vote: did_not_vote,
+          logged_in: logged_in,
+          quorum: quorum,
+          voting_type: voting_type,
+          result: result,
+          title: title_long || title_short
+        })
+
+      case upsert_result do
+        {:ok, voting} ->
+          Logger.info("Upserted voting", voting: voting)
           :ok
 
-        false ->
-          Logger.error(
-            "Number of processed rows do not equal number of rows in DB",
-            processed_rows: processed_rows,
-            db_rows: db_rows,
-            file: full_path
-          )
-
-          {:error, :number_of_rows_do_not_match}
+        {:error, changeset} ->
+          Logger.error("Failed to upsert voting with errors", errors: changeset.errors)
+          {:error, changeset}
       end
     end
   end
 
-  defp download_data(url, into) do
-    Req.get(url, into: FsFileStorage.stream!(into))
+  defp import_general(zip_url) do
+    zip_path = FileStorage.path("data_import/general.zip")
+    unzip_path = FileStorage.path("data_import/general")
+
+    result =
+      with :ok <- Unl.download(zip_url, zip_path, unzip_path),
+           :ok <-
+             Unl.process_with_count_check(
+               Path.join(unzip_path, "osoby.unl"),
+               &process_person/1,
+               &Parliament.count_person/0
+             ),
+           :ok <-
+             Unl.process_with_count_check(
+               Path.join(unzip_path, "poslanec.unl"),
+               &process_deputy/1,
+               &Parliament.count_deputy/0
+             ),
+           :ok <-
+             Unl.process_with_count_check(
+               Path.join(unzip_path, "organy.unl"),
+               &process_body/1,
+               &Parliament.count_body/0
+             ) do
+        :ok
+      end
+
+    :ok = Unl.remove(zip_path, unzip_path)
+    result
   end
 
-  defp unzip(from, to) do
-    FsFileStorage.mkdir(to)
+  defp import_election_period(zip_url, start_year) do
+    unzip_path = FileStorage.path("data_import/voting" <> start_year)
+    zip_path = unzip_path <> ".zip"
 
-    from = from |> FsFileStorage.path() |> String.to_charlist()
-    to = to |> FsFileStorage.path() |> String.to_charlist()
-
-    Logger.info("Unzipping from", from: from, to: to)
-
-    case :zip.unzip(from, [{:cwd, to}]) do
-      {:ok, _file_list} ->
+    result =
+      with :ok <- Unl.download(zip_url, zip_path, unzip_path),
+           :ok <-
+             Unl.process_with_count_check(
+               Path.join(unzip_path, "hl#{start_year}s.unl"),
+               &process_voting/1,
+               &Parliament.count_voting/0
+             ) do
         :ok
+      end
 
-      {:error, reason} ->
-        Logger.error("Failed to unzip archive", from: from, to: to, reason: reason)
-        {:error, reason}
-    end
-  end
-
-  defp rm_existing_file(path) do
-    case FsFileStorage.exists?(path) do
-      true ->
-        case FsFileStorage.rm(path) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            Logger.error("Failed to remove existing file", path: path, reason: reason)
-            {:error, reason}
-        end
-
-      false ->
-        :ok
-    end
+    :ok = Unl.remove(zip_path, unzip_path)
+    result
   end
 end

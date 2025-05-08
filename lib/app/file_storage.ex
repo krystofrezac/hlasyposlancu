@@ -1,15 +1,13 @@
 defmodule App.FileStorage do
-  @callback stream!(path :: String.t()) :: File.Stream.t()
-  @callback rm(path :: String.t()) :: :ok | {:error, reason :: any()}
-  @callback exists?(path :: String.t()) :: :boolean
-  @callback mkdir(path :: String.t()) :: :ok | {:error, reason :: any()}
-  @callback read(path :: String.t()) :: :ok | {:error, reason :: any()}
+  def path(path) do
+    Path.join(config().base_path, path)
+  end
 
-  def stream!(path), do: impl().stream!(path)
-  def rm(path), do: impl().rm(path)
-  def exists?(path), do: impl().exists?(path)
-  def mkdir(path), do: impl().mkdir(path)
-  def read(path), do: impl().mkdir(path)
+  defp config() do
+    values = Application.get_env(:app, __MODULE__, [])
 
-  defp impl(), do: Application.get_env(:app, __MODULE__, App.FileStorage.FsFileStorage)
+    base_path = Keyword.fetch!(values, :base_path)
+
+    %{base_path: base_path}
+  end
 end
