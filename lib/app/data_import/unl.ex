@@ -43,7 +43,6 @@ defmodule App.DataImport.Unl do
             :ok
 
           {:error, reason, _file} ->
-            IO.inspect({"Failed to remove existing file", path: path, reason: reason})
             Logger.error("Failed to remove existing file", path: path, reason: reason)
             {:error, reason}
         end
@@ -79,11 +78,6 @@ defmodule App.DataImport.Unl do
           :ok
 
         false ->
-          IO.inspect(
-            {"Number of processed rows do not equal number of rows in DB",
-             processed_rows: processed_rows, db_rows: db_rows, file: path}
-          )
-
           Logger.error(
             "Number of processed rows do not equal number of rows in DB",
             processed_rows: processed_rows,
@@ -114,7 +108,7 @@ defmodule App.DataImport.Unl do
 
           true ->
             case process_line(acc.prev_line, processor) do
-              {:error, reason} -> {:hatl, {:error, reason}}
+              {:error, reason} -> {:halt, {:error, reason}}
               :ok -> {:cont, %{row_count: acc.row_count + 1, prev_line: line}}
             end
         end

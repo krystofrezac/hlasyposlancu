@@ -3,7 +3,7 @@ defmodule App.Repo.Migrations.CreateVoting do
 
   def change do
     create table(:voting, primary_key: [name: :id, type: :bigint]) do
-      add :body_id, :integer, null: false
+      add :body_id, references(:body)
       add :point, :integer, null: false
       add :date_time, :naive_datetime, null: false
       add :voted_for, :integer, null: false

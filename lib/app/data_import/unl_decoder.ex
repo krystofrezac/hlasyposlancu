@@ -40,7 +40,9 @@ defmodule App.DataImport.UnlDecoder do
          {:ok, time} <- Time.new(hours, minutes, 0) do
       {:ok, time}
     else
-      _ -> Logger.error("Failed to decode time", time: raw)
+      _ ->
+        Logger.error("Failed to decode time", time: raw)
+        {:error, :invalid_time}
     end
   end
 
