@@ -1,7 +1,13 @@
 defmodule App.FileStorage do
-  @callback stream!(name :: String.t()) :: File.Stream.t()
+  def path(path) do
+    Path.join(config().base_path, path)
+  end
 
-  def stream!(name), do: impl().stream!(name)
+  defp config() do
+    values = Application.get_env(:app, __MODULE__, [])
 
-  defp impl(), do: Application.get_env(:app, __MODULE__, App.FileStorage.FsFileStorage)
+    base_path = Keyword.fetch!(values, :base_path)
+
+    %{base_path: base_path}
+  end
 end

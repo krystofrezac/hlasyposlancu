@@ -65,7 +65,7 @@ config :app, AppWeb.Endpoint,
 # Enable dev routes for dashboard and mailbox
 config :app, dev_routes: true
 
-config :app, App.FileStorage.FsFileStorage, base_path: Path.join(File.cwd!, "dev_fs")
+config :app, App.FileStorage, base_path: Path.join(File.cwd!(), "dev_fs")
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
